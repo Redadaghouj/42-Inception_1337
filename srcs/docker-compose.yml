@@ -9,6 +9,12 @@ services:
       - mariadb:/var/lib/mysql
     networks:
       - inception
+    environment:
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+    secrets:
+      - db_password
+      - db_root_password
   
   wordpress:
     build:
@@ -22,7 +28,7 @@ services:
 
   nginx:
     build:
-      context: ./requirements/wordpress
+      context: ./requirements/nginx
     container_name: nginx
     restart: on-failure
     ports:
@@ -31,6 +37,12 @@ services:
       - wordpress:/var/www/html/:ro
     networks:
       - inception
+
+secrets:
+  db_password:
+    file: ../secrets/db_password.txt
+  db_root_password:
+    file: ../secrets/db_root_password.txt
 
 networks:
   inception:
