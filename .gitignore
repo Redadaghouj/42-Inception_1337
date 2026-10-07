@@ -1,5 +1,4 @@
 secrets/*.txt
-srcs/.env
 
 # Python generated files
 __pycache__/
