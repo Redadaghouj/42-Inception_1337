@@ -41,6 +41,7 @@ services:
       - wp_user_password
 
   nginx:
+    image: inception-nginx:1.0
     build:
       context: ./requirements/nginx
     container_name: nginx
