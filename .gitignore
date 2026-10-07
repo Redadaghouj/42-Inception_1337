@@ -1,2 +1,6 @@
 secrets/*.txt
 srcs/.env
+
+# Python generated files
+__pycache__/
+*.pyc

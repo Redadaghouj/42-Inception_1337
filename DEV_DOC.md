@@ -1,10 +1,41 @@
 # Inception Developer Documentation
 
-This document explains how to set up, build, inspect, debug, and maintain the Inception infrastructure.
+This document explains how to set up, build, inspect, debug, and maintain the complete Inception infrastructure.
 
-## Architecture
+# Architecture
 
-The mandatory infrastructure contains three services:
+The complete project contains eight services:
+
+```text
+mariadb
+wordpress
+nginx
+redis
+adminer
+ftp
+static-site
+health-dashboard
+```
+
+The three mandatory services are:
+
+```text
+NGINX
+WordPress + PHP-FPM
+MariaDB
+```
+
+The bonus services are:
+
+```text
+Redis
+FTP
+Adminer
+Static Website
+Health Dashboard
+```
+
+The main application flow is:
 
 ```text
 Browser
@@ -17,32 +48,41 @@ NGINX
    v
 WordPress + PHP-FPM
    |
-   | MariaDB :3306
+   | MariaDB protocol :3306
    v
 MariaDB
 ```
 
-Each service runs in its own container.
-
-The mandatory images are:
+WordPress also uses Redis:
 
 ```text
-nginx:1.0
-wordpress:1.0
-mariadb:1.0
+WordPress
+   |
+   | Redis :6379
+   v
+Redis
 ```
 
-All three are built locally from custom Dockerfiles based on:
+The bonus web services are:
 
 ```text
-debian:12-slim
+Adminer           :8080
+Static Website    :8081
+Health Dashboard  :9001
+```
+
+The FTP service uses:
+
+```text
+21
+21100-21110
 ```
 
 ---
 
-## Prerequisites
+# Prerequisites
 
-The project is intended to run inside a Virtual Machine.
+The project runs inside a Virtual Machine.
 
 Required tools:
 
@@ -52,7 +92,7 @@ Docker Compose
 GNU Make
 ```
 
-Verify them with:
+Verify them:
 
 ```bash
 docker --version
@@ -60,9 +100,7 @@ docker compose version
 make --version
 ```
 
-The Docker daemon must be running.
-
-Check:
+Check that the Docker daemon is available:
 
 ```bash
 docker info
@@ -70,7 +108,7 @@ docker info
 
 ---
 
-## Repository Structure
+# Repository Structure
 
 ```text
 .
@@ -82,7 +120,8 @@ docker info
 │   ├── db_password.txt
 │   ├── db_root_password.txt
 │   ├── wp_admin_password.txt
-│   └── wp_user_password.txt
+│   ├── wp_user_password.txt
+│   └── ftp_password.txt
 └── srcs/
     ├── .env
     ├── docker-compose.yml
@@ -99,15 +138,43 @@ docker info
         │   └── conf/
         │       └── default.conf
         │
-        └── wordpress/
+        ├── wordpress/
+        │   ├── Dockerfile
+        │   └── tools/
+        │       └── init.sh
+        │
+        ├── redis/
+        │   ├── Dockerfile
+        │   └── conf/
+        │       └── redis.conf
+        │
+        ├── adminer/
+        │   └── Dockerfile
+        │
+        ├── ftp/
+        │   ├── Dockerfile
+        │   ├── conf/
+        │   │   └── vsftpd.conf
+        │   └── tools/
+        │       └── init.sh
+        │
+        ├── static-site/
+        │   ├── Dockerfile
+        │   ├── conf/
+        │   │   └── default.conf
+        │   └── site/
+        │       ├── index.html
+        │       └── style.css
+        │
+        └── health-dashboard/
             ├── Dockerfile
-            └── tools/
-                └── init.sh
+            └── app/
+                └── server.py
 ```
 
 ---
 
-## Configuration
+# Environment Configuration
 
 Non-sensitive configuration is stored in:
 
@@ -115,7 +182,7 @@ Non-sensitive configuration is stored in:
 srcs/.env
 ```
 
-Example structure:
+Current variables include:
 
 ```env
 DB_NAME=wordpress
@@ -129,15 +196,17 @@ WP_ADMIN_EMAIL=mdaghouj@student.1337.ma
 
 WP_USER=editor
 WP_USER_EMAIL=editor@example.com
+
+FTP_USER=ftpuser
 ```
 
-Do not store passwords in `.env`.
+Passwords must not be stored in `.env`.
 
 ---
 
-## Secrets
+# Secrets
 
-Sensitive credentials are stored in:
+Sensitive credentials are stored under:
 
 ```text
 secrets/
@@ -150,46 +219,56 @@ db_password.txt
 db_root_password.txt
 wp_admin_password.txt
 wp_user_password.txt
+ftp_password.txt
 ```
 
-These files are referenced by Docker Compose and mounted inside the containers under:
+Docker Compose mounts the required secrets inside containers under:
 
 ```text
 /run/secrets/
 ```
 
-For example:
+Examples:
 
 ```text
 /run/secrets/db_password
+/run/secrets/db_root_password
+/run/secrets/wp_admin_password
+/run/secrets/wp_user_password
+/run/secrets/ftp_password
 ```
 
-Both:
-
-```text
-srcs/.env
-secrets/*.txt
-```
-
-must remain excluded from Git.
-
-Check:
+Verify that secrets remain ignored:
 
 ```bash
 git status --ignored
 ```
 
-You can also verify that a secret is ignored with:
+Check one explicitly:
 
 ```bash
 git check-ignore secrets/db_password.txt
 ```
 
+Neither:
+
+```text
+srcs/.env
+```
+
+nor:
+
+```text
+secrets/*.txt
+```
+
+must be committed to Git.
+
 ---
 
-## Domain Configuration
+# Domain Configuration
 
-The project domain is:
+The WordPress domain is:
 
 ```text
 mdaghouj.42.fr
@@ -201,7 +280,7 @@ Inside the VM, `/etc/hosts` should contain:
 127.0.0.1 mdaghouj.42.fr
 ```
 
-Check:
+Verify:
 
 ```bash
 grep mdaghouj.42.fr /etc/hosts
@@ -209,22 +288,22 @@ grep mdaghouj.42.fr /etc/hosts
 
 ---
 
-## Persistent Data Directories
+# Persistent Storage
 
-Persistent data is stored under:
+Persistent application data is stored under:
 
 ```text
 /home/mdaghouj/data
 ```
 
-The project uses:
+The two mandatory directories are:
 
 ```text
 /home/mdaghouj/data/mariadb
 /home/mdaghouj/data/wordpress
 ```
 
-The Makefile creates these directories automatically before starting the stack.
+The Makefile creates them automatically.
 
 They can also be created manually:
 
@@ -234,11 +313,15 @@ mkdir -p \
   /home/mdaghouj/data/wordpress
 ```
 
+Only MariaDB and WordPress require persistent volumes.
+
+Redis is used only as a cache and does not require persistent storage.
+
+Adminer, the static site, and the health dashboard are stateless.
+
 ---
 
 # Build and Launch
-
-## Start the Complete Infrastructure
 
 From the repository root:
 
@@ -252,17 +335,23 @@ or:
 make up
 ```
 
-This executes Docker Compose with the project configuration and starts all services.
+This:
+
+1. creates persistent data directories
+2. builds the images
+3. creates the Docker network
+4. creates named volumes
+5. starts all containers
 
 ---
 
-## Build Images Only
+# Build Only
 
 ```bash
 make build
 ```
 
-Equivalent Compose command:
+Equivalent command:
 
 ```bash
 docker compose -f srcs/docker-compose.yml build
@@ -270,23 +359,23 @@ docker compose -f srcs/docker-compose.yml build
 
 ---
 
-## Stop the Infrastructure
+# Stop the Infrastructure
 
 ```bash
 make down
 ```
 
-Equivalent command:
+Equivalent:
 
 ```bash
 docker compose -f srcs/docker-compose.yml down
 ```
 
-This removes containers and the Compose network while preserving persistent volumes and data.
+Persistent WordPress and MariaDB data remain intact.
 
 ---
 
-## Full Cleanup
+# Full Cleanup
 
 ```bash
 make fclean
@@ -294,48 +383,57 @@ make fclean
 
 This removes:
 
-- project containers
-- project network
+- containers
+- Compose network
 - named volumes
-- local project images
-- MariaDB persistent data
-- WordPress persistent data
+- locally built project images
+- WordPress persistent files
+- MariaDB persistent files
 
 This operation is destructive.
 
 ---
 
-## Rebuild from Scratch
+# Rebuild From Scratch
 
 ```bash
 make re
 ```
 
-This performs a full cleanup and rebuilds the entire infrastructure.
+A full `make re` should recreate all eight services successfully.
 
-It is useful for validating that the project works from a clean environment.
-
----
-
-# Docker Compose Commands
-
-The Compose file is:
-
-```text
-srcs/docker-compose.yml
-```
-
-To avoid repeatedly typing the full path, the Makefile uses:
-
-```text
-docker compose -f srcs/docker-compose.yml
-```
-
-Useful commands follow.
+This is an important final reproducibility test.
 
 ---
 
-## Show Container Status
+# Docker Images
+
+The complete project uses:
+
+```text
+mariadb:1.0
+wordpress:1.0
+nginx:1.0
+redis:1.0
+adminer:1.0
+ftp:1.0
+static-site:1.0
+health-dashboard:1.0
+```
+
+List them:
+
+```bash
+docker image ls
+```
+
+All project images are built from custom Dockerfiles.
+
+---
+
+# Container Status
+
+Check the complete stack:
 
 ```bash
 docker compose -f srcs/docker-compose.yml ps
@@ -347,51 +445,82 @@ Expected services:
 mariadb
 wordpress
 nginx
+redis
+adminer
+ftp
+static-site
+health-dashboard
+```
+
+All should normally be:
+
+```text
+Up
 ```
 
 ---
 
-## Show Resolved Compose Configuration
+# Logs
+
+NGINX:
 
 ```bash
-docker compose -f srcs/docker-compose.yml config
+docker logs nginx
 ```
 
-This is useful for checking:
-
-- environment variable expansion
-- service configuration
-- volume declarations
-- networks
-- secrets
-- ports
-
-Be careful when inspecting configuration on systems where sensitive values may be present.
-
----
-
-## Rebuild One Service
-
-Example:
+WordPress:
 
 ```bash
-docker compose -f srcs/docker-compose.yml build wordpress
+docker logs wordpress
 ```
 
-Then recreate it:
+MariaDB:
 
 ```bash
-docker compose -f srcs/docker-compose.yml \
-  up -d --force-recreate wordpress
+docker logs mariadb
 ```
 
-The same pattern can be used for `nginx` or `mariadb`.
+Redis:
+
+```bash
+docker logs redis
+```
+
+Adminer:
+
+```bash
+docker logs adminer
+```
+
+FTP:
+
+```bash
+docker logs ftp
+```
+
+Static site:
+
+```bash
+docker logs static-site
+```
+
+Health dashboard:
+
+```bash
+docker logs health-dashboard
+```
+
+Follow logs continuously:
+
+```bash
+docker logs -f wordpress
+```
 
 ---
 
 # Container Inspection
 
-## List Containers
+List containers:
 
 ```bash
 docker ps
@@ -403,100 +532,75 @@ Include stopped containers:
 docker ps -a
 ```
 
----
-
-## Inspect a Container
+Inspect a container:
 
 ```bash
 docker inspect wordpress
 ```
 
-or:
-
-```bash
-docker inspect mariadb
-```
-
-or:
-
-```bash
-docker inspect nginx
-```
-
----
-
-## Enter a Running Container
-
-WordPress:
+Enter a container:
 
 ```bash
 docker exec -it wordpress sh
 ```
 
-MariaDB:
-
-```bash
-docker exec -it mariadb sh
-```
-
-NGINX:
-
-```bash
-docker exec -it nginx sh
-```
+The same pattern works with the other services.
 
 ---
 
-## Check PID 1
+# PID 1
 
-Example:
+Each container should run its real service process as PID 1.
+
+Check:
 
 ```bash
-docker exec wordpress sh -c \
-  'tr "\0" " " < /proc/1/cmdline; echo'
+for c in \
+  mariadb \
+  wordpress \
+  nginx \
+  redis \
+  adminer \
+  ftp \
+  static-site \
+  health-dashboard
+do
+    echo "=== $c ==="
+
+    docker exec "$c" sh -c \
+      'tr "\0" " " < /proc/1/cmdline; echo'
+done
 ```
 
-For WordPress, PID 1 should be the PHP-FPM master process.
+Examples include:
 
-MariaDB should run `mariadbd` as PID 1.
+```text
+mariadbd --user=mysql
 
-NGINX should run in foreground mode as PID 1.
+php-fpm: master process
 
----
+nginx: master process nginx -g daemon off;
 
-# Logs
+redis-server ...
 
-View logs for each service:
+php -S 0.0.0.0:8080
 
-```bash
-docker logs nginx
-```
+/usr/sbin/vsftpd /etc/vsftpd.conf
 
-```bash
-docker logs wordpress
-```
+nginx: master process nginx -g daemon off;
 
-```bash
-docker logs mariadb
-```
-
-Follow logs continuously:
-
-```bash
-docker logs -f wordpress
-```
-
-Show only recent logs:
-
-```bash
-docker logs --tail 50 wordpress
+python3 /app/server.py
 ```
 
 ---
 
 # Networking
 
-The services communicate through a custom Docker bridge network.
+All services communicate through the custom Docker bridge network:
+
+```text
+srcs_inception
+```
 
 List networks:
 
@@ -504,159 +608,131 @@ List networks:
 docker network ls
 ```
 
-Inspect the Inception network:
+Inspect:
 
 ```bash
 docker network inspect srcs_inception
 ```
 
-This should show:
+Docker service names act as DNS names.
+
+Examples:
 
 ```text
 nginx
 wordpress
 mariadb
+redis
+adminer
+ftp
+static-site
+health-dashboard
 ```
-
-attached to the same bridge network.
 
 ---
 
-## Test Docker DNS
+# Docker DNS Tests
 
-From NGINX to WordPress:
+NGINX to WordPress:
 
 ```bash
 docker exec nginx getent hosts wordpress
 ```
 
-From WordPress to MariaDB:
+WordPress to MariaDB:
 
 ```bash
 docker exec wordpress getent hosts mariadb
 ```
 
-Docker resolves service names dynamically.
+WordPress to Redis:
 
-No container IP addresses should be hardcoded.
+```bash
+docker exec wordpress getent hosts redis
+```
+
+Adminer to MariaDB:
+
+```bash
+docker exec adminer getent hosts mariadb
+```
+
+The health dashboard also uses these service names for its checks.
+
+Container IP addresses must not be hardcoded.
 
 ---
 
-## Published Ports
+# Published Ports
 
-Check published ports:
+Check all published ports:
 
 ```bash
-docker port nginx
-docker port wordpress
-docker port mariadb
+docker compose -f srcs/docker-compose.yml ps
 ```
 
-Expected behavior:
+Expected host-facing ports:
 
 ```text
-nginx       -> 443 published
-wordpress   -> no published ports
-mariadb     -> no published ports
+443             NGINX / WordPress
+8080            Adminer
+8081            Static Website
+9001            Health Dashboard
+21              FTP control
+21100-21110     FTP passive mode
 ```
 
-Only NGINX should be externally reachable.
-
----
-
-# Volumes
-
-List Docker volumes:
-
-```bash
-docker volume ls
-```
-
-The project creates:
+Internal-only ports:
 
 ```text
-srcs_wordpress
-srcs_mariadb
-```
-
-Inspect them:
-
-```bash
-docker volume inspect srcs_wordpress
-```
-
-```bash
-docker volume inspect srcs_mariadb
-```
-
-The volume configuration points to:
-
-```text
-/home/mdaghouj/data/wordpress
-/home/mdaghouj/data/mariadb
+9000    WordPress / PHP-FPM
+3306    MariaDB
+6379    Redis
 ```
 
 ---
 
-## Persistence Model
+# NGINX
 
-WordPress data:
+Check configuration:
 
-```text
-/home/mdaghouj/data/wordpress
-        |
-        v
-srcs_wordpress
-        |
-        v
-/var/www/html
+```bash
+docker exec nginx nginx -t
 ```
 
-MariaDB data:
+Inspect active listeners:
 
-```text
-/home/mdaghouj/data/mariadb
-        |
-        v
-srcs_mariadb
-        |
-        v
-/var/lib/mysql
+```bash
+docker exec nginx nginx -T 2>/dev/null \
+  | grep -E '^[[:space:]]*listen'
 ```
 
-Containers are disposable.
+The mandatory NGINX container should listen only on:
 
-The persistent data must survive container recreation.
+```text
+443
+```
+
+Check TLS protocols:
+
+```bash
+docker exec nginx nginx -T 2>/dev/null \
+  | grep ssl_protocols
+```
+
+Only:
+
+```text
+TLSv1.2 TLSv1.3
+```
+
+should be enabled.
 
 ---
 
-## Test Persistence
+# WordPress / PHP-FPM
 
-Create the infrastructure:
-
-```bash
-make up
-```
-
-Stop and remove containers:
-
-```bash
-make down
-```
-
-Start again:
-
-```bash
-make up
-```
-
-The existing WordPress installation and MariaDB database should still be present.
-
----
-
-# WordPress Debugging
-
-Check whether WordPress is installed:
+Check WordPress installation:
 
 ```bash
 docker exec wordpress \
@@ -675,18 +751,14 @@ docker exec wordpress \
   --allow-root
 ```
 
-Expected users include:
+Expected accounts include:
 
 ```text
 mdaghouj   administrator
 editor     editor
 ```
 
----
-
-## PHP-FPM
-
-Check PHP version:
+Check PHP:
 
 ```bash
 docker exec wordpress php -v
@@ -701,32 +773,93 @@ docker exec wordpress php-fpm8.2 -v
 PHP-FPM listens internally on:
 
 ```text
-0.0.0.0:9000
+9000
 ```
-
-It is not published to the host.
 
 ---
 
-# MariaDB Debugging
+# Redis
 
-Check the MariaDB process:
+Redis provides the WordPress object cache.
 
-```bash
-docker exec mariadb ps aux
+Redis configuration disables persistent storage:
+
+```text
+save ""
+appendonly no
 ```
 
-Check server availability:
+The service remains internal on:
+
+```text
+redis:6379
+```
+
+Check Redis:
+
+```bash
+docker exec redis redis-cli ping
+```
+
+Expected:
+
+```text
+PONG
+```
+
+Check WordPress Redis status:
+
+```bash
+docker exec wordpress \
+  wp redis status \
+  --path=/var/www/html \
+  --allow-root
+```
+
+Expected:
+
+```text
+Status: Connected
+```
+
+Check cached objects:
+
+```bash
+docker exec redis redis-cli DBSIZE
+```
+
+Inspect cache statistics:
+
+```bash
+docker exec redis redis-cli INFO stats \
+  | grep -E 'keyspace_hits|keyspace_misses'
+```
+
+The WordPress container includes the `php-redis` extension and Redis Object Cache plugin.
+
+---
+
+# MariaDB
+
+Check availability:
 
 ```bash
 docker exec mariadb \
   mariadb-admin ping
 ```
 
-View logs:
+Inspect the configured database and users:
 
 ```bash
-docker logs mariadb
+docker exec mariadb sh -c '
+mariadb \
+  --user=root \
+  --password="$(cat /run/secrets/db_root_password)" \
+  -e "
+    SHOW DATABASES;
+    SELECT User, Host FROM mysql.user;
+  "
+'
 ```
 
 MariaDB listens internally on:
@@ -735,41 +868,173 @@ MariaDB listens internally on:
 3306
 ```
 
-and must not publish this port to the host.
+It must not be published directly to the host.
 
 ---
 
-# NGINX Debugging
+# Adminer
 
-Check the NGINX configuration:
+Adminer runs using PHP's built-in HTTP server:
 
-```bash
-docker exec nginx nginx -t
+```text
+php -S 0.0.0.0:8080
 ```
 
-Check its process:
+Test:
 
 ```bash
-docker exec nginx ps aux
+curl -I http://127.0.0.1:8080
 ```
 
-View logs:
+Expected:
 
-```bash
-docker logs nginx
+```text
+HTTP/1.1 200 OK
 ```
 
-Test the website:
+Adminer connects to MariaDB using:
 
-```bash
-curl -ks https://mdaghouj.42.fr/
+```text
+mariadb:3306
 ```
 
-Check the page title:
+Database login:
+
+```text
+System:   MySQL
+Server:   mariadb
+Username: DB_USER
+Password: db_password secret
+Database: DB_NAME
+```
+
+---
+
+# FTP
+
+The FTP service uses `vsftpd`.
+
+Configuration:
+
+```text
+srcs/requirements/ftp/conf/vsftpd.conf
+```
+
+FTP control port:
+
+```text
+21
+```
+
+Passive range:
+
+```text
+21100-21110
+```
+
+Anonymous access is disabled.
+
+The FTP container mounts:
+
+```text
+srcs_wordpress
+```
+
+at:
+
+```text
+/var/www/html
+```
+
+which is the same WordPress volume used by the WordPress container.
+
+Check the mount:
 
 ```bash
-curl -ks https://mdaghouj.42.fr/ \
-  | grep -i '<title>'
+docker inspect ftp \
+  --format '{{range .Mounts}}{{println .Type .Name .Destination}}{{end}}'
+```
+
+Expected application mount:
+
+```text
+volume srcs_wordpress /var/www/html
+```
+
+Check the FTP user:
+
+```bash
+docker exec ftp id ftpuser
+```
+
+Its UID/GID should match `www-data`.
+
+---
+
+# FTP Transfer Test
+
+Load credentials:
+
+```bash
+FTP_USER="$(grep '^FTP_USER=' srcs/.env | cut -d= -f2-)"
+FTP_PASSWORD="$(cat secrets/ftp_password.txt)"
+```
+
+Create a file:
+
+```bash
+echo "FTP test" > /tmp/ftp-test.txt
+```
+
+Upload:
+
+```bash
+curl --fail --show-error \
+  --ftp-pasv \
+  --user "$FTP_USER:$FTP_PASSWORD" \
+  -T /tmp/ftp-test.txt \
+  ftp://127.0.0.1/ftp-test.txt
+```
+
+Verify from WordPress:
+
+```bash
+docker exec wordpress \
+  cat /var/www/html/ftp-test.txt
+```
+
+Check ownership:
+
+```bash
+docker exec wordpress \
+  ls -ln /var/www/html/ftp-test.txt
+```
+
+Expected UID/GID:
+
+```text
+33 33
+```
+
+Clean up:
+
+```bash
+docker exec wordpress rm -f /var/www/html/ftp-test.txt
+rm -f /tmp/ftp-test.txt
+unset FTP_PASSWORD
+```
+
+---
+
+# Static Website
+
+The static site is served by its own NGINX container.
+
+Test:
+
+```bash
+curl -s http://127.0.0.1:8081 \
+  | grep '<title>'
 ```
 
 Expected:
@@ -778,75 +1043,167 @@ Expected:
 <title>Inception</title>
 ```
 
----
-
-# TLS Validation
-
-Test TLS 1.2:
+Inspect listeners:
 
 ```bash
-openssl s_client \
-  -connect mdaghouj.42.fr:443 \
-  -tls1_2
+docker exec static-site nginx -T 2>/dev/null \
+  | grep -E '^[[:space:]]*listen'
 ```
 
-Test TLS 1.3:
-
-```bash
-openssl s_client \
-  -connect mdaghouj.42.fr:443 \
-  -tls1_3
-```
-
-Older TLS versions should not be accepted by NGINX.
-
----
-
-# Image Inspection
-
-List project images:
-
-```bash
-docker image ls
-```
-
-Expected images:
+Expected:
 
 ```text
-nginx:1.0
-wordpress:1.0
-mariadb:1.0
+listen 80;
+listen [::]:80;
 ```
 
-Inspect an image:
+The static-site container exposes host port:
+
+```text
+8081
+```
+
+---
+
+# Health Dashboard
+
+The custom health dashboard is implemented with Python's standard library.
+
+It checks:
+
+```text
+nginx:443
+wordpress:9000
+mariadb:3306
+redis:6379
+ftp:21
+adminer:8080
+static-site:80
+```
+
+It does not mount:
+
+```text
+/var/run/docker.sock
+```
+
+and does not require privileged access.
+
+Test:
 
 ```bash
-docker image inspect wordpress:1.0
+curl -s http://127.0.0.1:9001 \
+  | grep -oE 'UP|DOWN' \
+  | sort | uniq -c
 ```
 
-Verify the operating system inside each running container:
+With every monitored service running:
+
+```text
+7 UP
+```
+
+To test failure detection:
 
 ```bash
-for c in mariadb wordpress nginx; do
-    echo "=== $c ==="
-    docker exec "$c" sh -c \
-      'grep -E "^(PRETTY_NAME|VERSION_ID)=" /etc/os-release'
-done
+docker stop adminer
 ```
 
-All mandatory containers should report Debian 12.
+Check again:
+
+```bash
+curl -s http://127.0.0.1:9001 \
+  | grep -oE 'UP|DOWN' \
+  | sort | uniq -c
+```
+
+Expected:
+
+```text
+1 DOWN
+6 UP
+```
+
+Restore Adminer:
+
+```bash
+docker start adminer
+```
+
+The dashboard should return to:
+
+```text
+7 UP
+```
+
+---
+
+# Volumes
+
+List project volumes:
+
+```bash
+docker volume ls | grep srcs_
+```
+
+Expected:
+
+```text
+srcs_mariadb
+srcs_wordpress
+```
+
+Inspect:
+
+```bash
+docker volume inspect srcs_mariadb
+docker volume inspect srcs_wordpress
+```
+
+Backing directories:
+
+```text
+/home/mdaghouj/data/mariadb
+/home/mdaghouj/data/wordpress
+```
+
+---
+
+# Persistence Test
+
+Start:
+
+```bash
+make up
+```
+
+Remove containers:
+
+```bash
+make down
+```
+
+Start again:
+
+```bash
+make up
+```
+
+WordPress and MariaDB state should remain intact.
+
+The WordPress initialization script should not reinstall WordPress when persistent data already exists.
 
 ---
 
 # Restart Policy
 
-The services use:
+All project services use:
 
 ```text
 restart: on-failure
 ```
 
-Inspect it with:
+Check one:
 
 ```bash
 docker inspect wordpress \
@@ -859,26 +1216,53 @@ Expected:
 on-failure
 ```
 
-The same can be checked for:
+---
+
+# Service-Specific Rebuilds
+
+A single service can be rebuilt without rebuilding everything.
+
+Example:
+
+```bash
+docker compose -f srcs/docker-compose.yml \
+  build redis
+```
+
+Then recreate it:
+
+```bash
+docker compose -f srcs/docker-compose.yml \
+  up -d --force-recreate redis
+```
+
+The same workflow works for:
 
 ```text
-nginx
 mariadb
+wordpress
+nginx
+redis
+adminer
+ftp
+static-site
+health-dashboard
 ```
 
 ---
 
 # Development Workflow
 
-When modifying one service:
+When changing one service:
 
-1. Edit its Dockerfile, configuration, or initialization script.
-2. Validate shell syntax when applicable.
-3. Rebuild only that service.
-4. Recreate the container.
-5. Inspect logs.
-6. Test the affected functionality.
-7. Run a complete `make re` before considering the implementation final.
+1. edit its Dockerfile, configuration, or source
+2. validate syntax where applicable
+3. rebuild only that image
+4. recreate its container
+5. inspect logs
+6. verify the service directly
+7. verify dependent services
+8. run a complete `make re` before final validation
 
 Example for WordPress:
 
@@ -894,47 +1278,144 @@ docker compose -f srcs/docker-compose.yml \
 docker logs wordpress
 ```
 
+Example for FTP:
+
+```bash
+sh -n srcs/requirements/ftp/tools/init.sh
+
+docker compose -f srcs/docker-compose.yml \
+  build ftp
+
+docker compose -f srcs/docker-compose.yml \
+  up -d --force-recreate ftp
+```
+
+Example for the health dashboard:
+
+```bash
+python3 -m py_compile \
+  srcs/requirements/health-dashboard/app/server.py
+
+docker compose -f srcs/docker-compose.yml \
+  build health-dashboard
+
+docker compose -f srcs/docker-compose.yml \
+  up -d --force-recreate health-dashboard
+```
+
+---
+
+# Fedora Host Access
+
+The VM uses VirtualBox NAT.
+
+Services exposed by the VM can be forwarded to the Fedora host using VirtualBox NAT rules.
+
+Examples:
+
+```text
+Host :443   -> VM :443
+Host :8080  -> VM :8080
+Host :8081  -> VM :8081
+Host :9001  -> VM :9001
+```
+
+For WordPress, the Fedora host `/etc/hosts` contains:
+
+```text
+127.0.0.1 mdaghouj.42.fr
+```
+
+The website can then be opened using:
+
+```text
+https://mdaghouj.42.fr
+```
+
+Admin panel:
+
+```text
+https://mdaghouj.42.fr/wp-admin
+```
+
+Adminer:
+
+```text
+http://127.0.0.1:8080
+```
+
+Static website:
+
+```text
+http://127.0.0.1:8081
+```
+
+Health dashboard:
+
+```text
+http://127.0.0.1:9001
+```
+
+FTP additionally requires forwarding the FTP control and passive ports when accessed from the host.
+
 ---
 
 # Important Development Rules
 
 Do not:
 
-- use the `latest` image tag
-- use ready-made service images
-- use `network_mode: host`
-- use Docker `links`
+- use `latest`
+- use ready-made service images instead of the project Dockerfiles
+- use host networking
+- use Docker links
 - hardcode container IP addresses
-- store passwords in Dockerfiles
 - commit `.env`
-- commit secret files
-- expose WordPress port `9000`
-- expose MariaDB port `3306`
-- use fake infinite-loop commands to keep containers alive
+- commit passwords
+- store passwords in Dockerfiles
+- expose mandatory internal service ports unnecessarily
+- run fake infinite loops to keep containers alive
+- mount the Docker socket into the health dashboard
+- use `chmod 777` on the WordPress volume
 
-Each container should run its real service process in the foreground.
+Each service should run its real process in the foreground.
 
 ---
 
 # Final Verification
 
-Before considering the mandatory part complete, verify:
+Before submission, verify:
 
 ```text
-[ ] all three images build successfully
-[ ] all three containers remain running
-[ ] all containers use Debian 12
-[ ] NGINX is the only externally exposed service
+[ ] make re completes successfully
+
+Mandatory:
+[ ] mariadb is running
+[ ] wordpress is running
+[ ] nginx is running
+[ ] NGINX is the only mandatory public entrypoint
 [ ] HTTPS works on port 443
 [ ] TLS 1.2 works
 [ ] TLS 1.3 works
 [ ] WordPress loads correctly
 [ ] both WordPress users exist
 [ ] WordPress connects to MariaDB
+[ ] persistent volumes survive container recreation
+[ ] secrets are excluded from Git
 [ ] Docker DNS works
-[ ] named volumes persist data
-[ ] secrets are not committed
-[ ] passwords are not present in Docker environment metadata
 [ ] restart-on-failure works
-[ ] make re rebuilds the entire project successfully
+
+Bonus:
+[ ] redis is running
+[ ] WordPress Redis status is Connected
+[ ] Redis records cache hits/misses
+[ ] FTP authentication works
+[ ] FTP uploads reach the WordPress volume
+[ ] adminer is running
+[ ] Adminer can access MariaDB
+[ ] static-site is running
+[ ] static website loads on port 8081
+[ ] health-dashboard is running
+[ ] dashboard reports 7 UP
+[ ] stopping a monitored service reports DOWN
+[ ] restarting it returns to UP
 ```

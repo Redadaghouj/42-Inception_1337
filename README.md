@@ -1020,6 +1020,358 @@ The rebuilt stack successfully recreates:
 
 ---
 
+# Bonus Services
+
+The project also implements all bonus services defined by the Inception subject.
+
+## Redis Object Cache
+
+Redis is used as an object cache for WordPress.
+
+```text
+WordPress
+    |
+    | Redis :6379
+    v
+Redis
+```
+
+Redis runs in its own dedicated container and is accessible only through the internal Docker network.
+
+WordPress uses:
+
+- the PHP Redis extension
+- the Redis Object Cache plugin
+- the Docker hostname `redis`
+- port `6379`
+
+Redis is used only as a cache. Persistence is disabled because MariaDB remains the persistent source of truth.
+
+The Redis port is not exposed to the host.
+
+---
+
+## FTP Server
+
+A dedicated FTP container provides access to the WordPress website files.
+
+The FTP container and WordPress container share the same Docker named volume:
+
+```text
+FTP
+ |
+ v
+srcs_wordpress
+ ^
+ |
+WordPress
+```
+
+The FTP server uses `vsftpd`.
+
+It exposes:
+
+```text
+21
+21100-21110
+```
+
+Port `21` is used for the FTP control connection.
+
+Ports `21100-21110` are used for passive FTP data connections.
+
+The FTP user uses the same filesystem UID and GID as `www-data`, allowing uploaded files to remain accessible to WordPress without using unsafe permissions such as `chmod 777`.
+
+Anonymous FTP access is disabled.
+
+---
+
+## Adminer
+
+Adminer provides a lightweight web interface for MariaDB.
+
+It runs in its own dedicated container and is exposed on:
+
+```text
+http://localhost:8080
+```
+
+Adminer connects to MariaDB through the internal Docker network using:
+
+```text
+mariadb:3306
+```
+
+Adminer does not require its own database or persistent volume.
+
+---
+
+## Static Website
+
+A separate static showcase website is provided as a bonus service.
+
+It uses:
+
+- HTML
+- CSS
+- NGINX
+
+The static website runs in its own container and is exposed on:
+
+```text
+http://localhost:8081
+```
+
+NGINX runs in the foreground as PID 1.
+
+The static website does not require a database or persistent volume.
+
+---
+
+## Health Dashboard
+
+The additional service chosen for the final bonus is a custom infrastructure health dashboard.
+
+It is implemented in Python using only the standard library.
+
+The dashboard monitors:
+
+```text
+NGINX
+WordPress / PHP-FPM
+MariaDB
+Redis
+FTP
+Adminer
+Static Website
+```
+
+It checks the services through the internal Docker network using Docker service-name DNS.
+
+Examples:
+
+```text
+nginx:443
+wordpress:9000
+mariadb:3306
+redis:6379
+ftp:21
+adminer:8080
+static-site:80
+```
+
+The dashboard is exposed on:
+
+```text
+http://localhost:9001
+```
+
+Each request performs live network checks and reports every service as either:
+
+```text
+UP
+DOWN
+```
+
+The dashboard does not use the Docker socket and does not require privileged access.
+
+I chose this service because the infrastructure contains several independent services. The dashboard provides a single place to check their availability while also demonstrating Docker networking and service-name DNS.
+
+---
+
+# Complete Architecture
+
+With all bonus services enabled, the project contains eight containers:
+
+```text
+                         Browser
+                            |
+          +-----------------+-----------------+
+          |                 |                 |
+        :443              :8080             :8081
+          |                 |                 |
+          v                 v                 v
+        NGINX            Adminer         Static Site
+          |                 |
+          | FastCGI         |
+          v                 |
+   WordPress + PHP-FPM      |
+      |          |          |
+      |          |          |
+      v          v          |
+   MariaDB     Redis <------+
+      ^
+      |
+    Adminer
+
+
+WordPress Volume
+       ^
+       |
+      FTP
+
+
+Health Dashboard :9001
+       |
+       +--> NGINX
+       +--> WordPress
+       +--> MariaDB
+       +--> Redis
+       +--> FTP
+       +--> Adminer
+       +--> Static Site
+```
+
+The complete service list is:
+
+```text
+mariadb
+wordpress
+nginx
+redis
+adminer
+ftp
+static-site
+health-dashboard
+```
+
+All services run in dedicated containers.
+
+Services communicate through the custom Docker bridge network where required.
+
+---
+
+# Bonus Validation
+
+The complete bonus infrastructure was tested after a clean rebuild using:
+
+```bash
+make re
+```
+
+All eight containers successfully started from a clean state.
+
+## Redis
+
+Redis caching was verified using:
+
+```bash
+docker exec wordpress \
+  wp redis status \
+  --path=/var/www/html \
+  --allow-root
+```
+
+Redis was confirmed to contain cached WordPress objects.
+
+Cache activity was also verified using:
+
+```bash
+docker exec redis redis-cli INFO stats \
+  | grep -E 'keyspace_hits|keyspace_misses'
+```
+
+Both cache hits and misses increased while WordPress requests were performed.
+
+---
+
+## FTP
+
+FTP authentication and file transfer were tested successfully.
+
+A file uploaded through FTP appeared immediately inside:
+
+```text
+/var/www/html
+```
+
+in the WordPress container because both containers use the same `srcs_wordpress` volume.
+
+Uploaded files retained UID and GID:
+
+```text
+33:33
+```
+
+corresponding to `www-data`.
+
+Anonymous FTP access was also verified to be rejected.
+
+---
+
+## Adminer
+
+Adminer was verified to return:
+
+```text
+HTTP 200
+```
+
+It successfully resolves the MariaDB service using Docker DNS:
+
+```text
+mariadb
+```
+
+The WordPress database and its tables can be accessed through the Adminer interface.
+
+---
+
+## Static Website
+
+The static website was verified through:
+
+```bash
+curl http://127.0.0.1:8081
+```
+
+Its NGINX process runs as PID 1:
+
+```text
+nginx -g daemon off;
+```
+
+The website is served on:
+
+```text
+http://localhost:8081
+```
+
+---
+
+## Health Dashboard
+
+The health dashboard was tested with all services running:
+
+```text
+7 UP
+```
+
+One service was then stopped manually.
+
+The dashboard immediately changed to:
+
+```text
+6 UP
+1 DOWN
+```
+
+After restarting the service, the dashboard returned to:
+
+```text
+7 UP
+```
+
+The dashboard process runs as PID 1:
+
+```text
+python3 /app/server.py
+```
+
+This confirms that the dashboard performs real live network checks rather than displaying static service states.
+
+---
+
 # Resources
 
 The following documentation and references were used while learning, implementing, and validating the project:
