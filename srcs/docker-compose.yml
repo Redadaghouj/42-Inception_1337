@@ -102,6 +102,17 @@ services:
     networks:
       - inception
 
+  health-dashboard:
+    image: health-dashboard:1.0
+    build:
+      context: ./requirements/health-dashboard
+    container_name: health-dashboard
+    restart: on-failure
+    ports:
+      - "9001:9001"
+    networks:
+      - inception
+
 secrets:
   db_password:
     file: ../secrets/db_password.txt
