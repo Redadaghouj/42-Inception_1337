@@ -73,6 +73,24 @@ services:
     networks:
       - inception
 
+  ftp:
+    image: ftp:1.0
+    build:
+      context: ./requirements/ftp
+    container_name: ftp
+    restart: on-failure
+    environment:
+      FTP_USER: ${FTP_USER}
+    secrets:
+      - ftp_password
+    ports:
+      - "21:21"
+      - "21100-21110:21100-21110"
+    volumes:
+      - wordpress:/var/www/html
+    networks:
+      - inception
+
 secrets:
   db_password:
     file: ../secrets/db_password.txt
@@ -82,6 +100,8 @@ secrets:
     file: ../secrets/wp_admin_password.txt
   wp_user_password:
     file: ../secrets/wp_user_password.txt
+  ftp_password:
+    file: ../secrets/ftp_password.txt
 
 networks:
   inception:
