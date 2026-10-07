@@ -47,6 +47,8 @@ echo "Waiting for MariaDB..."
 attempt=0
 
 until php -r '
+mysqli_report(MYSQLI_REPORT_OFF);
+
 $db = @new mysqli(
     "mariadb",
     getenv("DB_USER"),
@@ -88,7 +90,7 @@ then
         --allow-root \
         --prompt=admin_password \
         < /run/secrets/wp_admin_password \
-	> /dev/null
+        > /dev/null
 
     echo "WordPress installed successfully."
 fi
@@ -109,8 +111,8 @@ then
         --path="$WP_DIR" \
         --allow-root \
         --prompt=user_pass \
-        < /run/secrets/wp_user_password
-    	> /dev/null
+        < /run/secrets/wp_user_password \
+        > /dev/null
 
     echo "WordPress user created: $WP_USER"
 fi

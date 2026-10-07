@@ -1,6 +1,6 @@
 services:
   mariadb:
-    image: inception-mariadb:1.0
+    image: mariadb:1.0
     build:
       context: ./requirements/mariadb
     container_name: mariadb
@@ -17,7 +17,7 @@ services:
       - db_root_password
   
   wordpress:
-    image: inception-wordpress:1.0
+    image: wordpress:1.0
     build:
       context: ./requirements/wordpress
     container_name: wordpress
@@ -41,7 +41,7 @@ services:
       - wp_user_password
 
   nginx:
-    image: inception-nginx:1.0
+    image: nginx:1.0
     build:
       context: ./requirements/nginx
     container_name: nginx
