@@ -1,6 +1,6 @@
 FROM debian:12-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends php-fpm php-mysql php-curl php-gd php-intl php-mbstring php-xml php-zip curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends php-fpm php-mysql php-curl php-gd php-intl php-mbstring php-xml php-zip php-redis curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 RUN sed -i 's|^listen = .*|listen = 0.0.0.0:9000|' /etc/php/8.2/fpm/pool.d/www.conf
 

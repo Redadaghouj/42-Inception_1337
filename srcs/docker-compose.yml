@@ -53,6 +53,15 @@ services:
     networks:
       - inception
 
+  redis:
+    image: redis:1.0
+    build:
+      context: ./requirements/redis
+    container_name: redis
+    restart: on-failure
+    networks:
+      - inception
+
 secrets:
   db_password:
     file: ../secrets/db_password.txt
