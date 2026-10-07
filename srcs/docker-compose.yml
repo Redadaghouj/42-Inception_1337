@@ -62,6 +62,17 @@ services:
     networks:
       - inception
 
+  adminer:
+    image: adminer:1.0
+    build:
+      context: ./requirements/adminer
+    container_name: adminer
+    restart: on-failure
+    ports:
+      - "8080:8080"
+    networks:
+      - inception
+
 secrets:
   db_password:
     file: ../secrets/db_password.txt
